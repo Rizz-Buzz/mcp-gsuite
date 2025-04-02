@@ -136,7 +136,6 @@ On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 <details>
   <summary>Development/Unpublished Servers Configuration</summary>
 
-
 ```json
 {
 	"mcpServers": {
@@ -177,7 +176,6 @@ specify a different credentials directory.
 
 <details>
   <summary>Published Servers Configuration</summary>
-
 
 ```json
 {
@@ -284,12 +282,36 @@ Since MCP servers run over stdio, debugging can be challenging. For the best
 debugging experience, we strongly recommend using the
 [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
 
+#### Using MCP Inspector with File-Based Configuration
+
 You can launch the MCP Inspector via
 [ `npm` ](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
 with this command:
 
 ```bash
 npx @modelcontextprotocol/inspector uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+#### Using MCP Inspector with Environment Variables
+
+If you're using environment variables instead of configuration files, you can
+pass them to the Inspector using the `-e` flag:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{...}' -e GSUITE_ACCOUNTS_CONFIG='[...]' -e GSUITE_USE_MEMORY_STORAGE=true uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+For example, with the configuration from the examples above:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{"web":{"client_id":"your-client-id","project_id":"your-project","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"your-client-secret","redirect_uris":["http://localhost:4100/code"],"javascript_origins":["http://localhost:3050"]}}' -e GSUITE_ACCOUNTS_CONFIG='[{"email":"your-email@example.com","account_type":"work","extra_info":"Your account description"}]' -e GSUITE_USE_MEMORY_STORAGE=true uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+If needed, you can use the `--` separator to distinguish inspector flags from
+server arguments:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{...}' -e GSUITE_ACCOUNTS_CONFIG='[...]' -- uv --directory /path/to/mcp-gsuite run mcp-gsuite
 ```
 
 Upon launching, the Inspector will display a URL that you can access in your
