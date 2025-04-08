@@ -1,4 +1,3 @@
-
 import logging
 from collections.abc import Sequence
 from functools import lru_cache
@@ -56,6 +55,7 @@ load_dotenv()
 from . import tools_gmail
 from . import tools_calendar
 from . import toolhandler
+from . import tools_gslide
 
 
 # Load environment variables
@@ -125,6 +125,29 @@ add_tool_handler(tools_calendar.ListCalendarsToolHandler())
 add_tool_handler(tools_calendar.GetCalendarEventsToolHandler())
 add_tool_handler(tools_calendar.CreateCalendarEventToolHandler())
 add_tool_handler(tools_calendar.DeleteCalendarEventToolHandler())
+
+add_tool_handler(tools_gslide.ListPresentationsToolHandler())
+add_tool_handler(tools_gslide.GetPresentationToolHandler())
+add_tool_handler(tools_gslide.AddSpeakerNotesToolHandler())
+add_tool_handler(tools_gslide.GetSlideNotesToolHandler())
+add_tool_handler(tools_gslide.ExportPdfToolHandler())
+add_tool_handler(tools_gslide.SharePresentationToolHandler())
+add_tool_handler(tools_gslide.AddChartToolHandler())
+add_tool_handler(tools_gslide.AddVideoToolHandler())
+add_tool_handler(tools_gslide.GetThumbnailsToolHandler())
+add_tool_handler(tools_gslide.CreatePresentationFromTemplateToolHandler())
+add_tool_handler(tools_gslide.MergePresentationsToolHandler())
+add_tool_handler(tools_gslide.CreatePresentationToolHandler())
+add_tool_handler(tools_gslide.CreateSlideToolHandler())
+add_tool_handler(tools_gslide.AddTextToSlideToolHandler())
+add_tool_handler(tools_gslide.CreateShapeToolHandler())
+add_tool_handler(tools_gslide.InsertImageToolHandler())
+add_tool_handler(tools_gslide.CreateTableToolHandler())
+add_tool_handler(tools_gslide.UpdateTableCellToolHandler())
+add_tool_handler(tools_gslide.DeleteSlideToolHandler())
+add_tool_handler(tools_gslide.DuplicateSlideToolHandler())
+add_tool_handler(tools_gslide.ReorderSlideToolHandler())
+add_tool_handler(tools_gslide.ReplaceAllTextToolHandler())
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
