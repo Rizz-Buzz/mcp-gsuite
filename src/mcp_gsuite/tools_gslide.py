@@ -97,7 +97,7 @@ class GetPresentationToolHandler(toolhandler.ToolHandler):
                     "match_case": {
                         "type": "boolean",
                         "description": "Whether to match case",
-                        "default": false
+                        "default": False
                     }
                 },
                 "required": ["presentation_id", "find_text", "replace_text", toolhandler.USER_ID_ARG]
