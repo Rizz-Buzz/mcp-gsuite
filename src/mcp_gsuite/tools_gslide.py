@@ -6,7 +6,7 @@ from mcp.types import (
     EmbeddedResource,
     LoggingLevel,
 )
-from . import gslides
+from . import gslide
 import json
 from . import toolhandler
 import base64
