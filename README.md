@@ -31,6 +31,22 @@ Right now, this MCP server supports Gmail and Calendar integration with the foll
   + Notification preferences
 * Delete calendar events
 
+4. Google Slides
+* Create new presentations
+* Add slides with various layouts
+* Insert text, images, and shapes
+* Apply themes and formatting
+* Retrieve presentation details
+* Duplicate slides or entire presentations
+* Modify existing slides
+
+  Example prompts you can try:
+    + Create a new presentation about our Q2 results
+    + Add a title slide with "Project Overview" as the title
+    + Insert our company logo into the current presentation
+    + Create a bullet point slide with our key metrics
+    + Add a slide with a comparison table of our products
+
 Example prompts you can try:
 
 * Retrieve my latest unread messages
