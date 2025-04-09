@@ -1205,17 +1205,58 @@ class GoogleSlidesService:
     def get_thumbnails(self, presentation_id: str, slide_id: str = None,
                        thumbnail_properties: Dict[str, Any] = None) -> Dict[str, Any] | None:
         """
-        Get thumbnails for slides in a presentation.
+        Get thumbnail images for one or all slides in a presentation.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str, optional): The ID of a specific slide to get thumbnail for
-            thumbnail_properties (Dict[str, Any], optional): Properties for the thumbnail
-                                                           (e.g., {'thumbnailSize': 'MEDIUM'})
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str, optional): The ID of a specific slide to get a thumbnail for.
+                If not provided, thumbnails for all slides will be retrieved.
+            
+            thumbnail_properties (Dict[str, Any], optional): Properties for the thumbnail.
+                Default: {'thumbnailSize': 'MEDIUM'}
+                Available sizes:
+                - 'SMALL': 220x172 pixels
+                - 'MEDIUM': 427x320 pixels
+                - 'LARGE': 793x595 pixels
         
         Returns:
-            Dict[str, Any]: The thumbnails response from the API
+            Dict[str, Any]: For a single slide request:
+                - contentUrl: URL to the thumbnail image
+                - width: Width of the thumbnail in pixels
+                - height: Height of the thumbnail in pixels
+                
+                For all slides:
+                - thumbnails: Array of objects containing:
+                  - slideId: The ID of the slide
+                  - thumbnail: Object with contentUrl, width, and height
+            
             None: If retrieval fails
+        
+        Example:
+            # Get thumbnail for a specific slide
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            slide_id = "p.1234567890"
+            
+            thumbnail = slides_service.get_thumbnails(
+                presentation_id,
+                slide_id,
+                {'thumbnailSize': 'LARGE'}
+            )
+            
+            if thumbnail:
+                thumbnail_url = thumbnail['contentUrl']
+                print(f"Slide thumbnail URL: {thumbnail_url}")
+                print(f"Size: {thumbnail['width']}x{thumbnail['height']} pixels")
+            
+            # Get thumbnails for all slides in a presentation
+            all_thumbnails = slides_service.get_thumbnails(presentation_id)
+            
+            if all_thumbnails and 'thumbnails' in all_thumbnails:
+                for i, thumb_data in enumerate(all_thumbnails['thumbnails']):
+                    slide_id = thumb_data['slideId']
+                    thumb_url = thumb_data['thumbnail']['contentUrl']
+                    print(f"Slide {i+1} (ID: {slide_id}) thumbnail: {thumb_url}")
         """
         try:
             if not thumbnail_properties:
@@ -1261,11 +1302,58 @@ class GoogleSlidesService:
         Export a presentation as a PDF file.
         
         Args:
-            presentation_id (str): The ID of the presentation to export
+            presentation_id (str): The ID of the presentation to export.
         
         Returns:
-            bytes: The PDF file content as bytes
-            None: If export fails
+            bytes: The PDF file content as bytes that can be written directly to a file.
+            None: If export fails due to permissions or other errors.
+        
+        Notes:
+            - The authenticated user must have permission to view the presentation
+            - The returned bytes object contains the complete PDF file
+            - All slides in the presentation are included in the PDF
+        
+        Example:
+            # Export a presentation as PDF and save it to a file
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            pdf_bytes = slides_service.export_pdf(presentation_id)
+            
+            if pdf_bytes:
+                # Save the PDF to a file
+                with open("exported_presentation.pdf", "wb") as pdf_file:
+                    pdf_file.write(pdf_bytes)
+                    print("Successfully exported presentation to PDF")
+            else:
+                print("Failed to export presentation as PDF")
+                
+            # Advanced: Send the PDF as an email attachment
+            if pdf_bytes:
+                import smtplib
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.base import MIMEBase
+                from email.mime.text import MIMEText
+                from email.utils import formatdate
+                from email import encoders
+                
+                msg = MIMEMultipart()
+                msg['From'] = 'your_email@example.com'
+                msg['To'] = 'recipient@example.com'
+                msg['Date'] = formatdate(localtime=True)
+                msg['Subject'] = 'Presentation PDF Export'
+                
+                msg.attach(MIMEText('Please find the attached presentation.'))
+                
+                attachment = MIMEBase('application', 'pdf')
+                attachment.set_payload(pdf_bytes)
+                encoders.encode_base64(attachment)
+                attachment.add_header(
+                    'Content-Disposition', 
+                    f'attachment; filename="presentation.pdf"'
+                )
+                msg.attach(attachment)
+                
+                # Connect to your email provider and send
+                # (This is a simplified example)
         """
         try:
             # Use the Drive API to export as PDF
@@ -1282,17 +1370,67 @@ class GoogleSlidesService:
 
     def share_presentation(self, presentation_id: str, email: str, role: str = 'reader') -> Dict[str, Any] | None:
         """
-        Share a presentation with another user.
+        Share a presentation with another user by email address.
         
         Args:
-            presentation_id (str): The ID of the presentation to share
-            email (str): The email address of the user to share with
-            role (str): The role to grant (default: 'reader')
-                      Options include: 'owner', 'organizer', 'fileOrganizer', 'writer', 'commenter', 'reader'
+            presentation_id (str): The ID of the presentation to share.
+            
+            email (str): The email address of the user to share with.
+                Must be a valid Google account email address.
+            
+            role (str): The permission role to grant (default: 'reader').
+                Available roles:
+                - 'reader': Can view but not edit (view-only access)
+                - 'commenter': Can view and comment but not edit
+                - 'writer': Can view, comment, and edit
+                - 'fileOrganizer': Can organize files in shared drives
+                - 'organizer': Full control except ownership change
+                - 'owner': Full ownership (transfers ownership)
         
         Returns:
-            Dict[str, Any]: The response from the API
-            None: If sharing fails
+            Dict[str, Any]: The response from the API containing:
+                - id: The ID of the newly created permission
+                - Other permission details may be included if specified in fields
+            
+            None: If sharing fails due to permissions, invalid email, etc.
+        
+        Notes:
+            - The authenticated user must have sufficient permissions to share the presentation
+            - When setting role='owner', the original owner loses ownership
+            - The recipient will receive an email notification unless notification is disabled
+        
+        Example:
+            # Share a presentation with view-only access
+            slides_service.share_presentation(
+                "1Abc123Def456Ghi789JklMnoPqrs",
+                "colleague@example.com",
+                role="reader"
+            )
+            
+            # Share with edit permissions
+            result = slides_service.share_presentation(
+                "1Abc123Def456Ghi789JklMnoPqrs",
+                "team.member@example.com",
+                role="writer"
+            )
+            
+            if result:
+                print(f"Successfully shared presentation with edit access")
+                print(f"Permission ID: {result['id']}")
+            
+            # Share with multiple people using different roles
+            recipients = [
+                {"email": "manager@example.com", "role": "writer"},
+                {"email": "client@example.com", "role": "commenter"},
+                {"email": "viewer@example.com", "role": "reader"}
+            ]
+            
+            for recipient in recipients:
+                slides_service.share_presentation(
+                    "1Abc123Def456Ghi789JklMnoPqrs",
+                    recipient["email"],
+                    role=recipient["role"]
+                )
         """
         try:
             user_permission = {
@@ -1315,15 +1453,98 @@ class GoogleSlidesService:
 
     def batch_update(self, presentation_id: str, requests: List[Dict[str, Any]]) -> Dict[str, Any] | None:
         """
-        Perform a batch update with multiple operations in a single request.
+        Perform a batch update with multiple operations in a single request for efficiency.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            requests (List[Dict[str, Any]]): List of request objects to perform
+            presentation_id (str): The ID of the presentation to update.
+            
+            requests (List[Dict[str, Any]]): List of request objects to perform.
+                Each request should follow the Google Slides API request format.
+                See: https://developers.google.com/slides/api/reference/rest/v1/presentations/request
         
         Returns:
-            Dict[str, Any]: The response from the API
+            Dict[str, Any]: The response from the API containing:
+                - replies: Array of responses for each request in the same order
+                  as the requests were specified
+            
             None: If the batch update fails
+        
+        Notes:
+            - Using batch updates is more efficient than making separate API calls
+            - There is a limit of 500 operations per batch update
+            - Operations are executed in the order they are specified
+            - If any operation fails, the entire batch fails (atomic execution)
+        
+        Example:
+            # Create a slide and add various elements in one batch operation
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            
+            # Prepare a batch of operations
+            requests = [
+                # Create a new blank slide
+                {
+                    'createSlide': {
+                        'objectId': 'my_new_slide',
+                        'slideLayoutReference': {
+                            'predefinedLayout': 'BLANK'
+                        }
+                    }
+                },
+                
+                # Add a title text box to the slide
+                {
+                    'createShape': {
+                        'objectId': 'title_box',
+                        'shapeType': 'TEXT_BOX',
+                        'elementProperties': {
+                            'pageObjectId': 'my_new_slide',
+                            'size': {
+                                'width': {'magnitude': 600, 'unit': 'PT'},
+                                'height': {'magnitude': 50, 'unit': 'PT'}
+                            },
+                            'transform': {
+                                'scaleX': 1,
+                                'scaleY': 1,
+                                'translateX': 50,
+                                'translateY': 30,
+                                'unit': 'PT'
+                            }
+                        }
+                    }
+                },
+                
+                # Add text to the title box
+                {
+                    'insertText': {
+                        'objectId': 'title_box',
+                        'text': 'Quarterly Performance Review'
+                    }
+                },
+                
+                # Style the title text
+                {
+                    'updateTextStyle': {
+                        'objectId': 'title_box',
+                        'textRange': {
+                            'type': 'ALL'
+                        },
+                        'style': {
+                            'bold': True,
+                            'fontSize': {'magnitude': 24, 'unit': 'PT'},
+                            'foregroundColor': {
+                                'opaqueColor': {'rgbColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}}
+                            }
+                        },
+                        'fields': 'bold,fontSize,foregroundColor'
+                    }
+                }
+            ]
+            
+            # Execute all operations in a single API call
+            result = slides_service.batch_update(presentation_id, requests)
+            
+            if result and 'replies' in result:
+                print(f"Successfully executed {len(result['replies'])} operations")
         """
         try:
             result = self.service.presentations().batchUpdate(
@@ -1339,15 +1560,60 @@ class GoogleSlidesService:
 
     def create_presentation_from_template(self, template_id: str, title: str) -> Dict[str, Any] | None:
         """
-        Create a new presentation from an existing template.
+        Create a new presentation by copying an existing template presentation.
         
         Args:
-            template_id (str): The ID of the template presentation
-            title (str): The title for the new presentation
+            template_id (str): The ID of the template presentation to copy.
+                This presentation must be accessible to the authenticated user.
+            
+            title (str): The title for the new presentation.
+                This will appear in Google Drive and at the top of the presentation.
         
         Returns:
-            Dict[str, Any]: The new presentation's metadata
+            Dict[str, Any]: The new presentation's complete metadata including:
+                - presentationId: The ID of the newly created presentation
+                - title: The title of the new presentation
+                - slides: Array of slide objects copied from the template
+                - masters: Master slide definitions
+                - layouts: Layout definitions
+            
             None: If creation fails
+        
+        Notes:
+            - The template is copied completely, including all slides, masters, and layouts
+            - You own the new copy, regardless of who owns the original template
+            - This is useful for creating standardized presentations
+        
+        Example:
+            # Create a new presentation from a company-approved template
+            template_id = "1TemplateID123456789"  # ID of your template presentation
+            new_title = "Q3 2023 Sales Report"
+            
+            new_presentation = slides_service.create_presentation_from_template(
+                template_id,
+                new_title
+            )
+            
+            if new_presentation:
+                new_id = new_presentation['presentationId']
+                print(f"Created new presentation from template: {new_id}")
+                
+                # Fill in placeholder values in the template with actual data
+                placeholders = {
+                    "{{QUARTER}}": "Q3 2023",
+                    "{{PRESENTER}}": "Jane Smith",
+                    "{{DEPARTMENT}}": "Sales",
+                    "{{DATE}}": "October 15, 2023"
+                }
+                
+                for placeholder, value in placeholders.items():
+                    slides_service.replace_all_text(
+                        new_id,
+                        placeholder,
+                        value
+                    )
+                
+                # Now the presentation is ready to use with real data
         """
         try:
             # Copy the template presentation to create a new one
@@ -1370,17 +1636,72 @@ class GoogleSlidesService:
     def replace_all_text(self, presentation_id: str, find_text: str, replace_text: str, 
                           match_case: bool = False) -> Dict[str, Any] | None:
         """
-        Replace all instances of text in a presentation.
+        Replace all instances of specific text throughout the entire presentation.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            find_text (str): The text to find
-            replace_text (str): The text to replace it with
-            match_case (bool): Whether to match case (default: False)
+            presentation_id (str): The ID of the presentation to modify.
+            
+            find_text (str): The text to find and replace.
+                Can be a regular substring or a placeholder like "{{NAME}}".
+            
+            replace_text (str): The text to replace the found text with.
+                Can include any valid text, including formatting characters.
+            
+            match_case (bool): Whether to match case when searching (default: False).
+                When False, "Sample" will match "SAMPLE", "sample", etc.
+                When True, only exact case matches will be replaced.
         
         Returns:
-            Dict[str, Any]: The response from the API with replacement counts
+            Dict[str, Any]: The response from the API containing:
+                - replies: Array containing:
+                  - replaceAllText: Object with:
+                    - occurrencesChanged: Number of replacements made
+            
             None: If operation fails
+        
+        Notes:
+            - Replaces text across all slides, including titles, body text, and notes
+            - Useful for template presentations with placeholders
+            - Recommended placeholder format: {{PLACEHOLDER_NAME}}
+        
+        Example:
+            # Replace template placeholders with actual data
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            
+            # Basic text replacement
+            result = slides_service.replace_all_text(
+                presentation_id,
+                "{{COMPANY_NAME}}",
+                "Acme Corporation"
+            )
+            
+            if result and 'replies' in result:
+                count = result['replies'][0]['replaceAllText']['occurrencesChanged']
+                print(f"Replaced company name in {count} locations")
+            
+            # Replace multiple placeholders
+            replacements = [
+                ("{{DATE}}", "October 15, 2023"),
+                ("{{PRESENTER}}", "John Smith"),
+                ("{{DEPARTMENT}}", "Marketing"),
+                ("{{QUARTER}}", "Q3 2023"),
+                ("{{GROWTH_RATE}}", "15.7%"),
+            ]
+            
+            for find_text, replace_text in replacements:
+                slides_service.replace_all_text(
+                    presentation_id,
+                    find_text,
+                    replace_text
+                )
+                
+            # Case-sensitive replacement (only replace uppercase "CONFIDENTIAL")
+            slides_service.replace_all_text(
+                presentation_id,
+                "CONFIDENTIAL",
+                "INTERNAL USE ONLY",
+                match_case=True
+            )
         """
         try:
             requests = [
@@ -1408,16 +1729,65 @@ class GoogleSlidesService:
 
     def add_speaker_notes(self, presentation_id: str, slide_id: str, notes: str) -> Dict[str, Any] | None:
         """
-        Add or update speaker notes for a slide.
+        Add or update speaker notes for a specific slide.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide
-            notes (str): The speaker notes content
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to add notes to.
+            
+            notes (str): The speaker notes content to add.
+                Can include line breaks and basic formatting.
         
         Returns:
             Dict[str, Any]: The response from the API
             None: If operation fails
+        
+        Notes:
+            - Speaker notes are visible in presenter view but not in the main presentation
+            - Notes can be used for talking points, reminders, or additional context
+            - The implementation tries to update existing notes first, and falls back
+              to creating new notes if needed
+        
+        Example:
+            # Add comprehensive speaker notes to a slide
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            slide_id = "p.1234567890"
+            
+            notes_content = 
+            Key talking points:
+            - Emphasize 20% growth in our core markets
+            - Mention new partnership with XYZ Corp
+            - Address supply chain improvements and cost reduction
+            
+            Questions to anticipate:
+            - Timeline for international expansion
+            - Projected Q4 performance
+            
+            Remember to pause for questions after slide 5.
+            
+            result = slides_service.add_speaker_notes(
+                presentation_id,
+                slide_id,
+                notes_content
+            )
+            
+            if result:
+                print(f"Successfully added speaker notes to slide")
+                
+            # Add notes to all slides in a presentation
+            presentation = slides_service.get_presentation(presentation_id)
+            
+            if presentation and 'slides' in presentation:
+                for i, slide in enumerate(presentation['slides']):
+                    slide_id = slide['objectId']
+                    
+                    # Create a simple note for each slide
+                    slides_service.add_speaker_notes(
+                        presentation_id,
+                        slide_id,
+                        f"Slide {i+1}: Speak for approximately 60 seconds on this topic."
+                    )
         """
         try:
             # Notes are contained in a shape with a notesId property
