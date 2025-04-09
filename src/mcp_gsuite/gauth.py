@@ -1,3 +1,4 @@
+# gauth.py
 import logging
 from oauth2client.client import (
     flow_from_clientsecrets,
@@ -33,7 +34,9 @@ SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://mail.google.com/",
-    "https://www.googleapis.com/auth/calendar"
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/presentations",
+    "https://www.googleapis.com/auth/drive"
 ]
 
 

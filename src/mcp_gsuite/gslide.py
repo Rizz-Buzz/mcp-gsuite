@@ -10,16 +10,41 @@ from google.oauth2 import service_account
 
 
 class GoogleSlidesService:
+    """
+    A comprehensive service class for interacting with Google Slides.
+    
+    This class provides methods to create and modify Google Slides presentations,
+    including adding slides, shapes, images, tables, and text. It also supports
+    operations like duplicating slides, reordering slides, and exporting presentations.
+    
+    The class requires either service account credentials or user OAuth credentials
+    to authenticate with the Google Slides and Drive APIs.
+    """
+
     def __init__(self, service_account_file=None, user_id=None):
         """
         Initialize the Google Slides service with either service account or user credentials.
         
         Args:
-            service_account_file (str, optional): Path to service account key file
-            user_id (str, optional): The ID of the user whose credentials to use
+            service_account_file (str, optional): Path to the service account key JSON file.
+                This file should contain the credentials for a Google Cloud service account
+                with access to Google Slides and Drive APIs.
+            
+            user_id (str, optional): The ID of the user whose OAuth credentials to use.
+                The credentials must have been previously stored using the gauth module.
         
         Raises:
-            RuntimeError: If neither valid credentials option is provided
+            RuntimeError: If neither valid credentials option is provided, or if the
+                          requested OAuth credentials are not found.
+        
+        Example:
+            # Using a service account
+            slides_service = GoogleSlidesService(
+                service_account_file='path/to/service-account-key.json'
+            )
+            
+            # Using OAuth user credentials
+            slides_service = GoogleSlidesService(user_id='user@example.com')
         """
         if service_account_file:
             credentials = service_account.Credentials.from_service_account_file(
@@ -42,11 +67,29 @@ class GoogleSlidesService:
         Create a new presentation with the specified title.
         
         Args:
-            title (str): The title of the new presentation
+            title (str): The title of the new presentation. This will appear in 
+                         Google Drive and at the top of the presentation.
         
         Returns:
-            Dict[str, Any]: The created presentation's metadata
-            None: If creation fails
+            Dict[str, Any]: The created presentation's metadata including:
+                - presentationId: The ID of the new presentation
+                - title: The title of the presentation
+                - slides: An array (empty for new presentations)
+                - layouts: Available layout metadata
+                - masters: Master slide metadata
+            
+            None: If creation fails due to API errors or authentication issues
+        
+        Example:
+            # Create a new presentation
+            presentation = slides_service.create_presentation("Quarterly Business Review")
+            
+            if presentation:
+                presentation_id = presentation['presentationId']
+                print(f"Created presentation with ID: {presentation_id}")
+                
+                # Use the new presentation ID to add content
+                slides_service.create_slide(presentation_id, layout='TITLE_SLIDE')
         """
         try:
             presentation = {
@@ -61,14 +104,37 @@ class GoogleSlidesService:
 
     def get_presentation(self, presentation_id: str) -> Dict[str, Any] | None:
         """
-        Retrieve a presentation by its ID.
+        Retrieve a presentation by its ID with all its content and metadata.
         
         Args:
-            presentation_id (str): The ID of the presentation to retrieve
+            presentation_id (str): The ID of the presentation to retrieve.
+                This is the string that appears in the presentation URL after
+                'https://docs.google.com/presentation/d/'.
         
         Returns:
-            Dict[str, Any]: The presentation's metadata and content
-            None: If retrieval fails
+            Dict[str, Any]: The presentation's complete metadata and content including:
+                - presentationId: The ID of the presentation
+                - title: The title of the presentation
+                - slides: Array of slide objects with their content
+                - layouts: Array of available layout definitions
+                - masters: Array of master slide definitions
+                - pageSize: The dimensions of slides in the presentation
+            
+            None: If retrieval fails due to incorrect ID, permissions, or API errors
+        
+        Example:
+            # Get details of an existing presentation
+            presentation = slides_service.get_presentation("1Abc123Def456Ghi789JklMnoPqrs")
+            
+            if presentation:
+                # Print basic information
+                print(f"Title: {presentation['title']}")
+                print(f"Number of slides: {len(presentation.get('slides', []))}")
+                
+                # Loop through slides to access content
+                for i, slide in enumerate(presentation.get('slides', [])):
+                    slide_id = slide['objectId']
+                    print(f"Slide {i+1} ID: {slide_id}")
         """
         try:
             presentation = self.service.presentations().get(
@@ -82,14 +148,40 @@ class GoogleSlidesService:
 
     def list_presentations(self, max_results: int = 50) -> List[Dict[str, Any]] | None:
         """
-        List presentations owned by the user.
+        List presentations owned by or accessible to the authenticated user.
         
         Args:
-            max_results (int): Maximum number of presentations to retrieve (default: 50)
+            max_results (int): Maximum number of presentations to retrieve (default: 50).
+                The value is automatically capped between 1 and 1000 to comply with
+                Google Drive API limitations.
         
         Returns:
-            List[Dict[str, Any]]: List of presentation metadata
-            None: If retrieval fails
+            List[Dict[str, Any]]: List of presentation metadata objects, each containing:
+                - id: The presentation ID
+                - name: The title of the presentation
+                - createdTime: ISO datetime string of creation time
+                - modifiedTime: ISO datetime string of last modification
+                - webViewLink: URL to view the presentation in a browser
+            
+            None: If the operation fails due to authentication or API errors
+        
+        Example:
+            # List the most recent 10 presentations
+            presentations = slides_service.list_presentations(max_results=10)
+            
+            if presentations:
+                # Sort by most recently modified
+                sorted_presentations = sorted(
+                    presentations, 
+                    key=lambda p: p['modifiedTime'], 
+                    reverse=True
+                )
+                
+                print("Your recent presentations:")
+                for pres in sorted_presentations:
+                    print(f"- {pres['name']} (Last modified: {pres['modifiedTime']})")
+                    print(f"  View at: {pres['webViewLink']}")
+                    print(f"  ID: {pres['id']}")
         """
         try:
             max_results = min(max(1, max_results), 1000)  # Ensure max_results is within API limits
@@ -109,16 +201,52 @@ class GoogleSlidesService:
 
     def create_slide(self, presentation_id: str, layout: str = 'TITLE_AND_BODY') -> Dict[str, Any] | None:
         """
-        Create a new slide in the specified presentation.
+        Create a new slide in the specified presentation with the given layout.
         
         Args:
-            presentation_id (str): The ID of the presentation to add the slide to
+            presentation_id (str): The ID of the presentation to add the slide to.
+            
             layout (str): The predefined layout type (default: 'TITLE_AND_BODY')
-                        Options include: 'TITLE_ONLY', 'TITLE_AND_BODY', 'BLANK', etc.
+                Available layout options include:
+                - 'TITLE_AND_BODY': Standard slide with title and content areas
+                - 'TITLE_ONLY': Slide with only a title placeholder
+                - 'BLANK': Empty slide with no predefined placeholders
+                - 'SECTION_HEADER': Section divider slide
+                - 'CAPTION': Image with caption layout
+                - 'TITLE_AND_TWO_COLUMNS': Title with two content columns
+                - 'MAIN_POINT': Title and main point layout
+                - 'BIG_NUMBER': Large number display layout
         
         Returns:
-            Dict[str, Any]: The response from the API
-            None: If creation fails
+            Dict[str, Any]: The response from the API containing:
+                - replies: Array with creation details including the new slide's objectId
+            
+            None: If slide creation fails
+        
+        Example:
+            # Create different types of slides in a presentation
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            
+            # Create a title slide
+            title_slide = slides_service.create_slide(presentation_id, layout='TITLE')
+            if title_slide and 'replies' in title_slide:
+                title_slide_id = title_slide['replies'][0]['createSlide']['objectId']
+                print(f"Created title slide with ID: {title_slide_id}")
+                
+                # Add title text to the slide
+                # Note: Title placeholder usually has ID 'p'
+                slides_service.add_text_to_slide(
+                    presentation_id, 
+                    title_slide_id, 
+                    'p',  # Title placeholder ID
+                    "Quarterly Financial Results"
+                )
+            
+            # Create a blank slide
+            slides_service.create_slide(presentation_id, layout='BLANK')
+            
+            # Create a section header slide
+            slides_service.create_slide(presentation_id, layout='SECTION_HEADER')
         """
         try:
             # Create a slide at the end of presentation with the specified layout
@@ -146,18 +274,63 @@ class GoogleSlidesService:
     def add_text_to_slide(self, presentation_id: str, slide_id: str, shape_id: str, 
                           text: str, text_style: Dict[str, Any] = None) -> Dict[str, Any] | None:
         """
-        Add text to a specified shape in a slide.
+        Add or replace text in a specified shape or placeholder in a slide.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide
-            shape_id (str): The ID of the shape to add text to
-            text (str): The text content to add
-            text_style (Dict[str, Any], optional): Style parameters for the text
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide containing the shape.
+            
+            shape_id (str): The ID of the shape or placeholder to add text to.
+                Common placeholder IDs for standard layouts:
+                - 'p': Title placeholder
+                - 'q': Body or subtitle placeholder
+                For custom shapes, you'll need to use the ID returned when creating the shape.
+            
+            text (str): The text content to add or replace in the shape.
+                This will replace any existing text in the shape.
+            
+            text_style (Dict[str, Any], optional): Style parameters for the text.
+                Example styling options:
+                {
+                    'bold': True,
+                    'italic': False,
+                    'fontSize': {'magnitude': 14, 'unit': 'PT'},
+                    'foregroundColor': {
+                        'opaqueColor': {'rgbColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}}
+                    },
+                    'fontFamily': 'Arial',
+                    'underline': False
+                }
         
         Returns:
             Dict[str, Any]: The response from the API
-            None: If operation fails
+            None: If the operation fails
+        
+        Example:
+            # Add styled text to a title placeholder
+            title_style = {
+                'bold': True,
+                'fontSize': {'magnitude': 24, 'unit': 'PT'},
+                'foregroundColor': {'opaqueColor': {'rgbColor': {'red': 0.2, 'green': 0.6, 'blue': 0.2}}}
+            }
+            
+            slides_service.add_text_to_slide(
+                "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                "p.1234567890",                  # slide_id
+                "p",                             # shape_id (title placeholder)
+                "Q2 Financial Results",
+                title_style
+            )
+            
+            # Add text to body placeholder
+            body_text = "• Revenue increased by 15%\n• New product line launched\n• Expanded to 3 new markets"
+            slides_service.add_text_to_slide(
+                "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                "p.1234567890",                  # slide_id
+                "q",                             # shape_id (body placeholder)
+                body_text
+            )
         """
         try:
             requests = [
@@ -201,21 +374,74 @@ class GoogleSlidesService:
                      x_pos: float = 100.0, 
                      y_pos: float = 100.0) -> Dict[str, Any] | None:
         """
-        Create a shape on a specific slide.
+        Create a shape on a specific slide with customized dimensions and position.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide
-            shape_type (str): The type of shape to create (default: 'RECTANGLE')
-                            Options include: 'RECTANGLE', 'ELLIPSE', 'TEXT_BOX', etc.
-            width (float): The width of the shape in points (default: 350.0)
-            height (float): The height of the shape in points (default: 100.0)
-            x_pos (float): The x-coordinate position in points (default: 100.0)
-            y_pos (float): The y-coordinate position in points (default: 100.0)
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to add the shape to.
+            
+            shape_type (str): The type of shape to create (default: 'RECTANGLE').
+                Common shape types include:
+                - 'RECTANGLE': Standard rectangle
+                - 'ELLIPSE': Circle or oval
+                - 'TEXT_BOX': Box optimized for text content
+                - 'ROUND_RECTANGLE': Rectangle with rounded corners
+                - 'DIAMOND': Diamond shape
+                - 'TRIANGLE': Triangle shape
+                - 'RIGHT_TRIANGLE': Right-angled triangle
+                - 'TRAPEZOID': Trapezoid shape
+                - 'ARROW': Arrow shape
+                - 'STAR': Star shape
+            
+            width (float): The width of the shape in points (default: 350.0).
+                A point is 1/72 of an inch.
+            
+            height (float): The height of the shape in points (default: 100.0).
+            
+            x_pos (float): The x-coordinate position in points from left (default: 100.0).
+            
+            y_pos (float): The y-coordinate position in points from top (default: 100.0).
         
         Returns:
-            Dict[str, Any]: The response from the API including the ID of the created shape
+            Dict[str, Any]: The response from the API including:
+                - createdObjectId: The ID of the created shape
+            
             None: If creation fails
+        
+        Example:
+            # Create a blue oval on a slide
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            slide_id = "p.1234567890"
+            
+            oval_result = slides_service.create_shape(
+                presentation_id,
+                slide_id,
+                shape_type="ELLIPSE",
+                width=200.0,
+                height=200.0,
+                x_pos=250.0,
+                y_pos=150.0
+            )
+            
+            if oval_result and 'createdObjectId' in oval_result:
+                oval_id = oval_result['createdObjectId']
+                
+                # Add text to the oval
+                slides_service.add_text_to_slide(
+                    presentation_id,
+                    slide_id,
+                    oval_id,
+                    "Key Highlight!",
+                    {
+                        'bold': True,
+                        'fontSize': {'magnitude': 16, 'unit': 'PT'},
+                        'foregroundColor': {'opaqueColor': {'rgbColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}}}
+                    }
+                )
+                
+                # In a real application, you would likely also set the fill color of the shape
+                # This requires an additional batch_update call with updateShapeProperties
         """
         try:
             # Generate a unique element ID
@@ -264,21 +490,70 @@ class GoogleSlidesService:
                      width: float = 400.0, height: float = 300.0, 
                      x_pos: float = 100.0, y_pos: float = 100.0) -> Dict[str, Any] | None:
         """
-        Insert an image into a slide from URL or binary data.
+        Insert an image into a slide from either a URL or binary image data.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide
-            image_url (str, optional): The URL of the image to insert
-            image_data (bytes, optional): The binary data of the image to insert
-            width (float): The width of the image in points (default: 400.0)
-            height (float): The height of the image in points (default: 300.0)
-            x_pos (float): The x-coordinate position in points (default: 100.0)
-            y_pos (float): The y-coordinate position in points (default: 100.0)
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to add the image to.
+            
+            image_url (str, optional): The URL of the image to insert.
+                The URL must be publicly accessible or from Google Drive.
+            
+            image_data (bytes, optional): The binary data of the image to insert.
+                Supported formats include JPEG, PNG, GIF, and BMP.
+            
+            width (float): The width of the image in points (default: 400.0).
+            
+            height (float): The height of the image in points (default: 300.0).
+            
+            x_pos (float): The x-coordinate position in points from left (default: 100.0).
+            
+            y_pos (float): The y-coordinate position in points from top (default: 100.0).
         
         Returns:
-            Dict[str, Any]: The response from the API
+            Dict[str, Any]: The response from the API containing:
+                - objectId: The ID of the created image element
+                - tempFileId: When using image_data, the ID of the temporary file
+                  created in Google Drive
+            
             None: If operation fails
+        
+        Notes:
+            - Either image_url OR image_data must be provided
+            - When using image_data, the method creates a temporary file in Google Drive
+            - Consider using clean_up_temp_file() to delete the temporary file after
+              confirming the image appears correctly in the presentation
+        
+        Example:
+            # Insert an image from a URL
+            slides_service.insert_image(
+                "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                "p.1234567890",                   # slide_id
+                image_url="https://example.com/images/logo.png",
+                width=300.0,
+                height=150.0,
+                x_pos=200.0,
+                y_pos=100.0
+            )
+            
+            # Insert an image from binary data (e.g., a local file)
+            with open('company_chart.png', 'rb') as img_file:
+                img_data = img_file.read()
+                
+                result = slides_service.insert_image(
+                    "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                    "p.1234567890",                   # slide_id
+                    image_data=img_data,
+                    width=500.0,
+                    height=350.0,
+                    x_pos=100.0,
+                    y_pos=200.0
+                )
+                
+                # Clean up the temporary file when done
+                if result and 'tempFileId' in result:
+                    slides_service.clean_up_temp_file(result['tempFileId'])
         """
         try:
             # Generate a unique element ID
@@ -382,13 +657,36 @@ class GoogleSlidesService:
 
     def clean_up_temp_file(self, file_id: str) -> bool:
         """
-        Delete a temporary file from Google Drive.
+        Delete a temporary file from Google Drive after it's been used.
+        
+        This is typically used to remove temporary image files created when
+        uploading images via the insert_image method.
         
         Args:
-            file_id (str): The ID of the file to delete
+            file_id (str): The ID of the temporary file to delete.
+                This ID is returned in the 'tempFileId' field of the insert_image response.
         
         Returns:
-            bool: True if deletion was successful, False otherwise
+            bool: True if deletion was successful, False otherwise.
+        
+        Example:
+            # Insert an image and then clean up the temporary file
+            image_result = slides_service.insert_image(
+                "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                "p.1234567890",                   # slide_id
+                image_data=image_binary_data
+            )
+            
+            if image_result and 'tempFileId' in image_result:
+                # Wait until you're sure the image is visible in the presentation
+                temp_file_id = image_result['tempFileId']
+                
+                # Then delete the temporary file to avoid cluttering Drive
+                success = slides_service.clean_up_temp_file(temp_file_id)
+                if success:
+                    print(f"Successfully cleaned up temporary file: {temp_file_id}")
+                else:
+                    print(f"Failed to clean up temporary file: {temp_file_id}")
         """
         try:
             self.drive_service.files().delete(fileId=file_id).execute()
@@ -403,21 +701,97 @@ class GoogleSlidesService:
                      width: float = 400.0, height: float = 300.0, 
                      x_pos: float = 100.0, y_pos: float = 100.0) -> Dict[str, Any] | None:
         """
-        Create a table on a slide.
+        Create a table on a slide with the specified number of rows and columns.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide
-            rows (int): Number of rows in the table
-            cols (int): Number of columns in the table
-            width (float): The width of the table in points (default: 400.0)
-            height (float): The height of the table in points (default: 300.0)
-            x_pos (float): The x-coordinate position in points (default: 100.0)
-            y_pos (float): The y-coordinate position in points (default: 100.0)
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to add the table to.
+            
+            rows (int): Number of rows in the table.
+                Must be a positive integer.
+            
+            cols (int): Number of columns in the table.
+                Must be a positive integer.
+            
+            width (float): The width of the table in points (default: 400.0).
+            
+            height (float): The height of the table in points (default: 300.0).
+            
+            x_pos (float): The x-coordinate position in points from left (default: 100.0).
+            
+            y_pos (float): The y-coordinate position in points from top (default: 100.0).
         
         Returns:
-            Dict[str, Any]: The response from the API
+            Dict[str, Any]: The response from the API containing:
+                - tableId: The ID of the created table
+            
             None: If operation fails
+        
+        Notes:
+            - The table is created with empty cells
+            - Use update_table_cell() to populate the table with content
+            - Table and cell IDs have specific formats:
+              - Table ID: "{slide_id}_table_{rows}x{cols}"
+              - Cell ID: "{table_id}_{row_idx}_{col_idx}" where indices are 0-based
+        
+        Example:
+            # Create a 3x3 table for quarterly data
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            slide_id = "p.1234567890"
+            
+            result = slides_service.create_table(
+                presentation_id,
+                slide_id,
+                rows=4,  # Header row + 3 data rows
+                cols=4,  # Quarter column + 3 data columns
+                width=600.0,
+                height=300.0,
+                x_pos=50.0,
+                y_pos=150.0
+            )
+            
+            if result and 'tableId' in result:
+                table_id = result['tableId']
+                
+                # Add header row
+                headers = ["", "Q1", "Q2", "Q3"]
+                for col, header in enumerate(headers):
+                    slides_service.update_table_cell(
+                        presentation_id,
+                        table_id,
+                        0,  # First row (0-based)
+                        col,
+                        header
+                    )
+                
+                # Add row titles
+                row_titles = ["Revenue", "Expenses", "Profit"]
+                for row, title in enumerate(row_titles, start=1):
+                    slides_service.update_table_cell(
+                        presentation_id,
+                        table_id,
+                        row,
+                        0,  # First column (0-based)
+                        title
+                    )
+                
+                # Add data
+                data = [
+                    ["$100K", "$120K", "$140K"],  # Revenue
+                    ["$80K", "$85K", "$95K"],     # Expenses
+                    ["$20K", "$35K", "$45K"]      # Profit
+                ]
+                
+                for row, row_data in enumerate(data, start=1):
+                    for col, value in enumerate(row_data, start=1):
+                        slides_service.update_table_cell(
+                            presentation_id,
+                            table_id,
+                            row,
+                            col,
+                            value
+                        )
         """
         try:
             # Generate a unique element ID
@@ -466,18 +840,64 @@ class GoogleSlidesService:
                           row_idx: int, col_idx: int, 
                           text: str) -> Dict[str, Any] | None:
         """
-        Update the content of a table cell.
+        Update the content of a specific table cell with text.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            table_id (str): The ID of the table
-            row_idx (int): The row index (0-based)
-            col_idx (int): The column index (0-based)
-            text (str): The text content to insert into the cell
+            presentation_id (str): The ID of the presentation.
+            
+            table_id (str): The ID of the table.
+                This is returned by the create_table method as 'tableId'.
+            
+            row_idx (int): The row index (0-based).
+                The first row is 0, second row is 1, etc.
+            
+            col_idx (int): The column index (0-based).
+                The first column is 0, second column is 1, etc.
+            
+            text (str): The text content to insert into the cell.
+                This will replace any existing text in the cell.
         
         Returns:
             Dict[str, Any]: The response from the API
             None: If operation fails
+        
+        Notes:
+            - Cell IDs are automatically generated as "{table_id}_{row_idx}_{col_idx}"
+            - To style the text in cells, you would need to make additional API calls
+              using batch_update with updateTextStyle requests
+        
+        Example:
+            # Create a small comparison table
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            slide_id = "p.1234567890"
+            
+            table_result = slides_service.create_table(
+                presentation_id,
+                slide_id,
+                rows=3,
+                cols=3
+            )
+            
+            if table_result and 'tableId' in table_result:
+                table_id = table_result['tableId']
+                
+                # Define all cell contents
+                cell_contents = [
+                    ["", "Before", "After"],
+                    ["Users", "5,000", "12,500"],
+                    ["Revenue", "$10K", "$25K"]
+                ]
+                
+                # Populate the entire table
+                for row, row_data in enumerate(cell_contents):
+                    for col, content in enumerate(row_data):
+                        slides_service.update_table_cell(
+                            presentation_id,
+                            table_id,
+                            row,
+                            col,
+                            content
+                        )
         """
         try:
             # The ID of a table cell follows the pattern: {table_id}_{row_idx}_{col_idx}
@@ -508,12 +928,38 @@ class GoogleSlidesService:
         Delete a slide from a presentation.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide to delete
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to delete.
         
         Returns:
             Dict[str, Any]: The response from the API
             None: If deletion fails
+        
+        Warning:
+            - This action cannot be undone through the API
+            - The slide and all its content will be permanently removed
+        
+        Example:
+            # Get the presentation to find slide IDs
+            presentation = slides_service.get_presentation("1Abc123Def456Ghi789JklMnoPqrs")
+            
+            if presentation and 'slides' in presentation:
+                slides = presentation['slides']
+                
+                # Delete slides with specific criteria, e.g., empty slides
+                for slide in slides:
+                    slide_id = slide['objectId']
+                    
+                    # Check if this is a slide we want to delete (example condition)
+                    if not slide.get('pageElements', []):  # If no elements (empty slide)
+                        result = slides_service.delete_slide(
+                            "1Abc123Def456Ghi789JklMnoPqrs",
+                            slide_id
+                        )
+                        
+                        if result:
+                            print(f"Successfully deleted empty slide with ID: {slide_id}")
         """
         try:
             requests = [
@@ -540,13 +986,49 @@ class GoogleSlidesService:
         Reorder a slide to a new position in the presentation.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide to reorder
-            new_position (int): The new position for the slide (0-based)
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to reorder.
+            
+            new_position (int): The new position for the slide (0-based).
+                0 means first slide, 1 means second slide, etc.
         
         Returns:
             Dict[str, Any]: The response from the API
             None: If reordering fails
+        
+        Notes:
+            - The slide at the specified position and all subsequent slides 
+              will be shifted to make room for the moved slide
+        
+        Example:
+            # Move a slide to be the first in the presentation
+            slides_service.reorder_slide(
+                "1Abc123Def456Ghi789JklMnoPqrs",  # presentation_id
+                "p.1234567890",                   # slide_id
+                0  # Move to first position
+            )
+            
+            # Get presentation data to find slide IDs and reorder strategically
+            presentation = slides_service.get_presentation("1Abc123Def456Ghi789JklMnoPqrs")
+            
+            if presentation and 'slides' in presentation:
+                # Example: Move the conclusion slide to be right after the introduction
+                # Assuming introduction is the first slide (position 0)
+                slides = presentation['slides']
+                
+                for i, slide in enumerate(slides):
+                    # Find the conclusion slide based on some criteria
+                    # This is just an example - you might identify it differently
+                    if 'Conclusion' in str(slide):
+                        conclusion_slide_id = slide['objectId']
+                        # Move it to be the second slide (position 1, right after intro)
+                        slides_service.reorder_slide(
+                            "1Abc123Def456Ghi789JklMnoPqrs",
+                            conclusion_slide_id,
+                            1  # Second position (after intro)
+                        )
+                        break
         """
         try:
             requests = [
@@ -571,15 +1053,57 @@ class GoogleSlidesService:
 
     def duplicate_slide(self, presentation_id: str, slide_id: str) -> Dict[str, Any] | None:
         """
-        Duplicate a slide in a presentation.
+        Duplicate a slide in a presentation, creating an exact copy.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide to duplicate
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to duplicate.
         
         Returns:
-            Dict[str, Any]: The response from the API including the ID of the new slide
+            Dict[str, Any]: The response from the API containing:
+                - objectId: The ID of the newly created duplicate slide
+            
             None: If duplication fails
+        
+        Notes:
+            - The duplicated slide is placed immediately after the original slide
+            - All content, formatting, and layouts from the original slide are preserved
+            - The new slide will have a new unique ID
+        
+        Example:
+            # Duplicate a slide that contains important content
+            presentation_id = "1Abc123Def456Ghi789JklMnoPqrs"
+            
+            # First get the presentation to find the slide to duplicate
+            presentation = slides_service.get_presentation(presentation_id)
+            
+            if presentation and 'slides' in presentation:
+                # For this example, we'll duplicate the first slide
+                if len(presentation['slides']) > 0:
+                    original_slide_id = presentation['slides'][0]['objectId']
+                    
+                    result = slides_service.duplicate_slide(
+                        presentation_id,
+                        original_slide_id
+                    )
+                    
+                    if result and 'replies' in result:
+                        # Get the ID of the new slide
+                        new_slide_id = result['replies'][0]['duplicateObject']['objectId']
+                        print(f"Created duplicate slide with ID: {new_slide_id}")
+                        
+                        # You could now modify the duplicate slide
+                        # For example, add a "COPY" label to it
+                        slides_service.create_shape(
+                            presentation_id,
+                            new_slide_id,
+                            shape_type="TEXT_BOX",
+                            width=100.0,
+                            height=50.0,
+                            x_pos=600.0,
+                            y_pos=20.0
+                        )
         """
         try:
             # Get the current presentation to find the slide index
@@ -618,16 +1142,42 @@ class GoogleSlidesService:
 
     def apply_slide_theme(self, presentation_id: str, slide_id: str, master_slide_id: str) -> Dict[str, Any] | None:
         """
-        Apply a theme from a master slide to a specific slide.
+        Apply a theme or layout from a master slide to a specific slide.
         
         Args:
-            presentation_id (str): The ID of the presentation
-            slide_id (str): The ID of the slide to apply the theme to
-            master_slide_id (str): The ID of the master slide/layout to apply
+            presentation_id (str): The ID of the presentation.
+            
+            slide_id (str): The ID of the slide to apply the theme to.
+            
+            master_slide_id (str): The ID of the master slide/layout to apply.
+                This ID can be found in the 'masters' section of the presentation data.
         
         Returns:
             Dict[str, Any]: The response from the API
             None: If operation fails
+        
+        Notes:
+            - This method changes the slide's layout without altering its content
+            - Layout changes may affect how content is displayed or positioned
+            - To find master slide IDs, examine the 'masters' array in the presentation data
+        
+        Example:
+            # First get the presentation to find available master slide layouts
+            presentation = slides_service.get_presentation("1Abc123Def456Ghi789JklMnoPqrs")
+            
+            if presentation and 'masters' in presentation:
+                # For this example, we'll apply the first master slide
+                if len(presentation['masters']) > 0:
+                    first_master_id = presentation['masters'][0]['masterId']
+                    
+                    result = slides_service.apply_slide_theme(
+                        presentation_id,
+                        "p.1234567890",  # Assuming the first slide ID is "p.1234567890"
+                        first_master_id
+                    )
+                    
+                    if result:
+                        print(f"Successfully applied theme to slide")
         """
         try:
             requests = [
