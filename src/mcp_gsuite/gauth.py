@@ -1,21 +1,68 @@
-# gauth.py
+import argparse
+import atexit
+import json
 import logging
+import os
+import tempfile
+
+import httplib2
+import pydantic
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 from oauth2client.client import (
-    flow_from_clientsecrets,
+    Credentials,
     FlowExchangeError,
     OAuth2Credentials,
-    Credentials,
+    flow_from_clientsecrets,
 )
-from googleapiclient.discovery import build
-import httplib2
-from google.auth.transport.requests import Request
-import os
-import pydantic
-import json
-import argparse
+
+# Add this global variable at the module level after imports
+_memory_credentials_storage = {}
+
+# Global vars to track temp files for cleanup
+_temp_files = []
+
+
+def _cleanup_temp_files():
+    """Clean up temporary files at exit"""
+    global _temp_files
+    for file_path in _temp_files:
+        try:
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            logging.warning(f"Failed to delete temporary file {file_path}: {e}")
+
+
+# Register cleanup function
+atexit.register(_cleanup_temp_files)
+
+
+def should_use_memory_storage() -> bool:
+    import os
+
+    return os.environ.get("GSUITE_USE_MEMORY_STORAGE", "").lower() == "true"
 
 
 def get_gauth_file() -> str:
+    import os
+
+    oauth_config = os.environ.get("GSUITE_OAUTH_CONFIG")
+    if oauth_config:
+        # Create a temporary file with the contents of the environment variable
+        try:
+            # Validate the JSON structure
+            json.loads(oauth_config)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as temp:
+                temp.write(oauth_config)
+                _temp_files.append(temp.name)  # Add to cleanup list
+                return temp.name
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON in GSUITE_OAUTH_CONFIG: {e}")
+            # Fall back to file-based configuration
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--gauth-file",
@@ -29,7 +76,7 @@ def get_gauth_file() -> str:
 
 CLIENTSECRETS_LOCATION = get_gauth_file()
 
-REDIRECT_URI = 'http://localhost:4100/code'
+REDIRECT_URI = "http://localhost:4100/code"
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -54,6 +101,28 @@ class AccountInfo(pydantic.BaseModel):
 
 
 def get_accounts_file() -> str:
+    import os
+
+    accounts_config = os.environ.get("GSUITE_ACCOUNTS_CONFIG")
+    if accounts_config:
+        # Create a temporary file with the contents of the environment variable
+        try:
+            # Parse and validate the JSON accounts array
+            accounts_array = json.loads(accounts_config)
+            if not isinstance(accounts_array, list):
+                raise ValueError("GSUITE_ACCOUNTS_CONFIG must be a JSON array")
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as temp:
+                accounts_dict = {"accounts": accounts_array}
+                json.dump(accounts_dict, temp)
+                _temp_files.append(temp.name)  # Add to cleanup list
+                return temp.name
+        except (json.JSONDecodeError, ValueError) as e:
+            logging.error(f"Invalid JSON in GSUITE_ACCOUNTS_CONFIG: {e}")
+            # Fall back to file-based configuration
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--accounts-file",
@@ -72,29 +141,30 @@ def get_account_info() -> list[AccountInfo]:
         accounts = data.get("accounts", [])
         return [AccountInfo.model_validate(acc) for acc in accounts]
 
+
 class GetCredentialsException(Exception):
-  """Error raised when an error occurred while retrieving credentials.
+    """Error raised when an error occurred while retrieving credentials.
 
-  Attributes:
-    authorization_url: Authorization URL to redirect the user to in order to
-                       request offline access.
-  """
+    Attributes:
+      authorization_url: Authorization URL to redirect the user to in order to
+                         request offline access.
+    """
 
-  def __init__(self, authorization_url):
-    """Construct a GetCredentialsException."""
-    self.authorization_url = authorization_url
+    def __init__(self, authorization_url):
+        """Construct a GetCredentialsException."""
+        self.authorization_url = authorization_url
 
 
 class CodeExchangeException(GetCredentialsException):
-  """Error raised when a code exchange has failed."""
+    """Error raised when a code exchange has failed."""
 
 
 class NoRefreshTokenException(GetCredentialsException):
-  """Error raised when no refresh token has been found."""
+    """Error raised when no refresh token has been found."""
 
 
 class NoUserIdException(Exception):
-  """Error raised when no user ID could be retrieved."""
+    """Error raised when no user ID could be retrieved."""
 
 
 def get_credentials_dir() -> str:
@@ -122,14 +192,23 @@ def get_stored_credentials(user_id: str) -> OAuth2Credentials | None:
     Returns:
     Stored oauth2client.client.OAuth2Credentials if found, None otherwise.
     """
-    try:
+    global _memory_credentials_storage
 
+    # Check if we should use memory storage
+    if should_use_memory_storage():
+        if user_id in _memory_credentials_storage:
+            return _memory_credentials_storage[user_id]
+        return None
+
+    try:
         cred_file_path = _get_credential_filename(user_id=user_id)
         if not os.path.exists(cred_file_path):
-            logging.warning(f"No stored Oauth2 credentials yet at path: {cred_file_path}")
+            logging.warning(
+                f"No stored Oauth2 credentials yet at path: {cred_file_path}"
+            )
             return None
 
-        with open(cred_file_path, 'r') as f:
+        with open(cred_file_path, "r") as f:
             data = f.read()
             return Credentials.new_from_json(data)
     except Exception as e:
@@ -141,9 +220,16 @@ def get_stored_credentials(user_id: str) -> OAuth2Credentials | None:
 
 def store_credentials(credentials: OAuth2Credentials, user_id: str):
     """Store OAuth 2.0 credentials in the specified directory."""
+    global _memory_credentials_storage
+
+    # Check if we should use memory storage
+    if should_use_memory_storage():
+        _memory_credentials_storage[user_id] = credentials
+        return
+
     cred_file_path = _get_credential_filename(user_id=user_id)
     os.makedirs(os.path.dirname(cred_file_path), exist_ok=True)
-    
+
     data = credentials.to_json()
     with open(cred_file_path, "w") as f:
         f.write(data)
@@ -160,13 +246,13 @@ def exchange_code(authorization_code):
     Raises:
     CodeExchangeException: an error occurred.
     """
-    flow = flow_from_clientsecrets(CLIENTSECRETS_LOCATION, ' '.join(SCOPES))
+    flow = flow_from_clientsecrets(CLIENTSECRETS_LOCATION, " ".join(SCOPES))
     flow.redirect_uri = REDIRECT_URI
     try:
         credentials = flow.step2_exchange(authorization_code)
         return credentials
     except FlowExchangeError as error:
-        logging.error('An error occurred: %s', error)
+        logging.error("An error occurred: %s", error)
         raise CodeExchangeException(None)
 
 
@@ -180,14 +266,14 @@ def get_user_info(credentials):
     User information as a dict.
     """
     user_info_service = build(
-        serviceName='oauth2', version='v2',
-        http=credentials.authorize(httplib2.Http()))
+        serviceName="oauth2", version="v2", http=credentials.authorize(httplib2.Http())
+    )
     user_info = None
     try:
         user_info = user_info_service.userinfo().get().execute()
     except Exception as e:
-        logging.error(f'An error occurred: {e}')
-    if user_info and user_info.get('id'):
+        logging.error(f"An error occurred: {e}")
+    if user_info and user_info.get("id"):
         return user_info
     else:
         raise NoUserIdException()
@@ -202,11 +288,13 @@ def get_authorization_url(email_address, state):
     Returns:
     Authorization URL to redirect the user to.
     """
-    flow = flow_from_clientsecrets(CLIENTSECRETS_LOCATION, ' '.join(SCOPES), redirect_uri=REDIRECT_URI)
-    flow.params['access_type'] = 'offline'
-    flow.params['approval_prompt'] = 'force'
-    flow.params['user_id'] = email_address
-    flow.params['state'] = state
+    flow = flow_from_clientsecrets(
+        CLIENTSECRETS_LOCATION, " ".join(SCOPES), redirect_uri=REDIRECT_URI
+    )
+    flow.params["access_type"] = "offline"
+    flow.params["approval_prompt"] = "force"
+    flow.params["user_id"] = email_address
+    flow.params["state"] = state
     return flow.step1_get_authorize_url(state=state)
 
 
@@ -232,14 +320,15 @@ def get_credentials(authorization_code, state):
     NoRefreshTokenException: No refresh token could be retrieved from the
                                 available sources.
     """
-    email_address = ''
+    email_address = ""
     try:
         credentials = exchange_code(authorization_code)
         user_info = get_user_info(credentials)
         import json
+
         logging.error(f"user_info: {json.dumps(user_info)}")
-        email_address = user_info.get('email')
-        
+        email_address = user_info.get("email")
+
         if credentials.refresh_token is not None:
             store_credentials(credentials, user_id=email_address)
             return credentials
@@ -248,15 +337,14 @@ def get_credentials(authorization_code, state):
             if credentials and credentials.refresh_token is not None:
                 return credentials
     except CodeExchangeException as error:
-        logging.error('An error occurred during code exchange.')
+        logging.error("An error occurred during code exchange.")
         # Drive apps should try to retrieve the user and credentials for the current
         # session.
         # If none is available, redirect the user to the authorization URL.
         error.authorization_url = get_authorization_url(email_address, state)
         raise error
     except NoUserIdException:
-        logging.error('No user ID could be retrieved.')
+        logging.error("No user ID could be retrieved.")
         # No refresh token has been retrieved.
     authorization_url = get_authorization_url(email_address, state)
     raise NoRefreshTokenException(authorization_url)
-

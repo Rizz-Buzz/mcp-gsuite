@@ -89,25 +89,25 @@ Google Workspace (G Suite) APIs require OAuth2 authorization. Follow these steps
    
 
 ```json
-   [
-     "openid",
-     "https://mail.google.com/",
-     "https://www.googleapis.com/auth/calendar",
-     "https://www.googleapis.com/auth/userinfo.email"
-   ]
+[
+	"openid",
+	"https://mail.google.com/",
+	"https://www.googleapis.com/auth/calendar",
+	"https://www.googleapis.com/auth/userinfo.email"
+]
 ```
 
 3. Then create a `.gauth.json` in your working directory with client
 
 ```json
 {
-    "web": {
-        "client_id": "$your_client_id",
-        "client_secret": "$your_client_secret",
-        "redirect_uris": ["http://localhost:4100/code"],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token"
-    }
+	"web": {
+		"client_id": "$your_client_id",
+		"client_secret": "$your_client_secret",
+		"redirect_uris": ["http://localhost:4100/code"],
+		"auth_uri": "https://accounts.google.com/o/oauth2/auth",
+		"token_uri": "https://oauth2.googleapis.com/token"
+	}
 }
 ```
 
@@ -115,13 +115,13 @@ Google Workspace (G Suite) APIs require OAuth2 authorization. Follow these steps
 
 ```json
 {
-    "accounts": [
-        {
-            "email": "alice@bob.com",
-            "account_type": "personal",
-            "extra_info": "Additional info that you want to tell Claude: E.g. 'Contains Family Calendar'"
-        }
-    ]
+	"accounts": [
+		{
+			"email": "alice@bob.com",
+			"account_type": "personal",
+			"extra_info": "Additional info that you want to tell Claude: E.g. 'Contains Family Calendar'"
+		}
+	]
 }
 ```
 
@@ -160,21 +160,21 @@ Note: You can also use the `uv run mcp-gsuite --accounts-file /path/to/custom/.a
 
 ```json
 {
-  "mcpServers": {
-    "mcp-gsuite": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "<dir_to>/mcp-gsuite",
-        "run",
-        "mcp-gsuite",
-        "--accounts-file",
-        "/path/to/custom/.accounts.json",
-        "--credentials-dir",
-        "/path/to/custom/credentials"
-      ]
-    }
-  }
+	"mcpServers": {
+		"mcp-gsuite": {
+			"command": "uv",
+			"args": [
+				"--directory",
+				"<dir_to>/mcp-gsuite",
+				"run",
+				"mcp-gsuite",
+				"--accounts-file",
+				"/path/to/custom/.accounts.json",
+				"--credentials-dir",
+				"/path/to/custom/credentials"
+			]
+		}
+	}
 }
 ```
 
@@ -186,18 +186,18 @@ Note: You can also use the `uv run mcp-gsuite --accounts-file /path/to/custom/.a
 
 ```json
 {
-  "mcpServers": {
-    "mcp-gsuite": {
-      "command": "uvx",
-      "args": [
-        "mcp-gsuite",
-        "--accounts-file",
-        "/path/to/custom/.accounts.json",
-        "--credentials-dir",
-        "/path/to/custom/credentials"
-      ]
-    }
-  }
+	"mcpServers": {
+		"mcp-gsuite": {
+			"command": "uvx",
+			"args": [
+				"mcp-gsuite",
+				"--accounts-file",
+				"/path/to/custom/.accounts.json",
+				"--credentials-dir",
+				"/path/to/custom/credentials"
+			]
+		}
+	}
 }
 ```
 
@@ -211,15 +211,39 @@ The MCP server can be configured with several command-line options to specify cu
 * `--accounts-file`: Specifies the path to the `.accounts.json` file containing information about the Google accounts. Default is `./.accounts.json`.
 * `--credentials-dir`: Specifies the directory where OAuth credentials are stored after successful authentication. Default is the current working directory with a subdirectory for each account as `.oauth.{email}.json`.
 
-These options allow for flexibility in managing different environments or multiple sets of credentials and accounts, especially useful in development and testing scenarios.
+#### Environment Variable Configuration
 
-Example usage:
+Alternatively, you can provide configuration directly via environment variables
+instead of files:
 
-```bash
-uv run mcp-gsuite --gauth-file /path/to/custom/.gauth.json --accounts-file /path/to/custom/.accounts.json --credentials-dir /path/to/custom/credentials
+- `GSUITE_OAUTH_CONFIG`: JSON string containing the OAuth2 client configuration
+  (same structure as `.gauth.json`)
+- `GSUITE_ACCOUNTS_CONFIG`: JSON array of account configurations (same structure
+  as the "accounts" array in `.accounts.json`)
+- `GSUITE_USE_MEMORY_STORAGE`: When set to "true", credentials will be stored in
+  memory rather than on disk
+
+Example using environment variables in your Claude Desktop configuration:
+
+```json
+{
+	"mcpServers": {
+		"mcp-gsuite": {
+			"command": "uvx",
+			"args": ["mcp-gsuite"],
+			"env": {
+				"GSUITE_OAUTH_CONFIG": "{\"web\":{\"client_id\":\"your-client-id\",\"project_id\":\"your-project\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"your-client-secret\",\"redirect_uris\":[\"http://localhost:4100/code\"],\"javascript_origins\":[\"http://localhost:3050\"]}}",
+				"GSUITE_ACCOUNTS_CONFIG": "[{\"email\":\"your-email@example.com\",\"account_type\":\"work\",\"extra_info\":\"Your account description\"}]",
+				"GSUITE_USE_MEMORY_STORAGE": "true"
+			}
+		}
+	}
+}
 ```
 
-This configuration is particularly useful when you have multiple instances of the server running with different configurations or when deploying to environments where the default paths are not suitable.
+These options allow for flexibility in managing different environments or
+multiple sets of credentials and accounts, especially useful in development and
+testing scenarios.
 
 ## Development
 
@@ -256,13 +280,38 @@ Note: You'll need to set PyPI credentials via environment variables or command f
 Since MCP servers run over stdio, debugging can be challenging. For the best debugging
 experience, we strongly recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
 
+#### Using MCP Inspector with File-Based Configuration
+
 You can launch the MCP Inspector via [ `npm` ](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) with this command:
 
 ```bash
 npx @modelcontextprotocol/inspector uv --directory /path/to/mcp-gsuite run mcp-gsuite
 ```
 
-Upon launching, the Inspector will display a URL that you can access in your browser to begin debugging.
+#### Using MCP Inspector with Environment Variables
+
+If you're using environment variables instead of configuration files, you can
+pass them to the Inspector using the `-e` flag:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{...}' -e GSUITE_ACCOUNTS_CONFIG='[...]' -e GSUITE_USE_MEMORY_STORAGE=true uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+For example, with the configuration from the examples above:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{"web":{"client_id":"your-client-id","project_id":"your-project","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"your-client-secret","redirect_uris":["http://localhost:4100/code"],"javascript_origins":["http://localhost:3050"]}}' -e GSUITE_ACCOUNTS_CONFIG='[{"email":"your-email@example.com","account_type":"work","extra_info":"Your account description"}]' -e GSUITE_USE_MEMORY_STORAGE=true uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+If needed, you can use the `--` separator to distinguish inspector flags from
+server arguments:
+
+```bash
+npx @modelcontextprotocol/inspector -e GSUITE_OAUTH_CONFIG='{...}' -e GSUITE_ACCOUNTS_CONFIG='[...]' -- uv --directory /path/to/mcp-gsuite run mcp-gsuite
+```
+
+Upon launching, the Inspector will display a URL that you can access in your
+browser to begin debugging.
 
 You can also watch the server logs with this command:
 
